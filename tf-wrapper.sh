@@ -18,10 +18,11 @@ set -e
 
 action=$1
 branch=$2
-policysource=$3
+policysource="/workspace/policy-library"
 project_id=$4
+policy_repo="https://github.com/clearify-demo/gcp-policies.git"
 policy_type=$5 # FILESYSTEM or CLOUDSOURCE
-base_dir=$(pwd)
+base_dir=$(pwd)/terraform
 tmp_plan="${base_dir}/tmp_plan" #if you change this, update build triggers
 environments_regex="^(development|non-production|production|shared)$"
 
@@ -79,8 +80,21 @@ tf_plan() {
   fi
 }
 
+download_policy_repo() {
+  # Check if $policy_file_path is empty so we clone the policies repo only once
+  if [ -z "$(ls -A "${policysource}" 2> /dev/null)" ]; then
+    echo "Downloading policy repo into ${policysource}."
+    mkdir -p "${policysource}"
+    git clone https://github.com/clearify-demo/gcp-policies.git "${policysource}"
+    ls ${policysource}
+    # gcloud source repos clone gcp-policies "${policysource}" --project="${project_id}" || exit 34
+  fi
+}
+
 ## terraform init/plan/validate for all valid environments matching regex.
 tf_plan_validate_all() {
+  download_policy_repo
+
   local env
   local component
   find "$base_dir" -mindepth 1 -maxdepth 1 -type d \
@@ -121,29 +135,20 @@ tf_show() {
 tf_validate() {
   local path=$1
   local tf_env=$2
-  local policy_file_path=$3
   local tf_component=$4
   echo "*************** TERRAFORM VALIDATE ******************"
   echo "      At environment: ${tf_component}/${tf_env} "
-  echo "      Using policy from: ${policy_file_path} "
+  echo "      Using policy from: ${policysource} "
   echo "*****************************************************"
-  if ! command -v terraform-validator &> /dev/null; then
-    echo "terraform-validator not found!  Check path or visit"
-    echo "https://github.com/GoogleCloudPlatform/terraform-validator/blob/main/docs/install.md"
-  elif [ -z "$policy_file_path" ]; then
+  if [ -z "$policysource" ]; then
     echo "no policy repo found! Check the argument provided for policysource to this script."
     echo "https://github.com/GoogleCloudPlatform/terraform-validator/blob/main/docs/policy_library.md"
   else
     if [ -d "$path" ]; then
       cd "$path" || exit
-      terraform show -json "${tmp_plan}/${tf_component}-${tf_env}.tfplan" > "${tf_env}.json" || exit 32
-      if [[ "$policy_type" == "CLOUDSOURCE" ]]; then
-        # Check if $policy_file_path is empty so we clone the policies repo only once
-        if [ -z "$(ls -A "${policy_file_path}" 2> /dev/null)" ]; then
-          gcloud source repos clone gcp-policies "${policy_file_path}" --project="${project_id}" || exit 34
-        fi
-      fi
-      terraform-validator validate "${tf_env}.json" --policy-path="${policy_file_path}" --project="${project_id}" || exit 33
+      terraform show -json "${tmp_plan}/${tf_component}-${tf_env}.tfplan" > "${tf_env}.json" || exit 3
+
+      gcloud alpha resource-config validate terraform "${tf_env}.json" --policy-library="${policysource}" || exit 33
       cd "$base_dir" || exit
     else
       echo "ERROR:  ${path} does not exist"

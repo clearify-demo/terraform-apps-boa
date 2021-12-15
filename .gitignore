@@ -46,3 +46,6 @@ crash.log
 test/fixtures/shared/terraform.tfvars
 
 credentials.json
+
+policy-library/
+terraform/tmp_plan/

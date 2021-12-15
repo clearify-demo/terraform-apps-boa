@@ -23,7 +23,7 @@ steps:
   args:
   - -c
   - |
-      ./tf-wrapper.sh plan_validate_all ${BRANCH_NAME} ${_POLICY_REPO}
+      ./tf-wrapper.sh plan_validate_all ${BRANCH_NAME}
 
 # artifacts:
 #   objects:
